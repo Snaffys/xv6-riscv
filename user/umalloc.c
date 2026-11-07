@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 #include "kernel/param.h"
+#include "kernel/riscv.h"
 
 /*
 // Memory allocator by Kernighan and Ritchie,
@@ -125,7 +126,7 @@ block *next_block(block *block) {
   char *next_block_ptr = (char *)block + block_size(block);
     
   if (next_block_ptr < heap_end) {
-    return (block *)next_block_ptr;
+    return (struct block *)next_block_ptr;
   } else {
     return 0;
   }
@@ -225,7 +226,7 @@ static int more_heap(uint needed_size) {
     last_block = b;
     add_block_to_free_lists(b);
   }
-  printk("allocated bytes: %d heap_end%p\n", allocated_bytes, heap_end);
+  printf("allocated bytes: %d heap_end%p\n", allocated_bytes, heap_end);
   return 0;
 }
 
@@ -260,7 +261,7 @@ void *malloc(uint size) {
     ubp->prev_size = needed_block_size;
     block *next_b = next_block(ubp);
     if (next_b) {
-      next->prevPsize = unused_bllock_part;
+      next_b->prev_size = unused_block_part;
     } else {
       last_block = ubp;
     }
@@ -280,7 +281,7 @@ void free(void *ap) {
   }
   block *b = (block *)((char *)ap - sizeof(block));
   if ((char *)b < heap_start || (char *)ap >= heap_end || !used(b)) {
-    printk("wrong pointer: %p\n", ap);
+    printf("wrong pointer: %p\n", ap);
     return;
   }
   b->size &= ~USED;
@@ -318,7 +319,7 @@ void free(void *ap) {
       uint rest_mem = heap_end - keep;
       if (sbrk(-(int)rest_mem) != SBRK_ERROR) {
         heap_end = keep;
-        printk("freed memory: %d  heap end: %p\n", rest_mem, heap_end);
+        printf("freed memory: %d  heap end: %p\n", rest_mem, heap_end);
         if (keep == (char *)b) {
           last_block = prev_block(b);
           // info
