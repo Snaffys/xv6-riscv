@@ -12,7 +12,7 @@ struct node *push(struct node *head, int value)
     struct node *n = malloc(sizeof(*n));
     if(n == 0) {
         printf("out of memory\n");
-        exit(1);
+        return 0;
     }
     n->value = value;
     n->next = head;
@@ -64,7 +64,12 @@ int main(void)
     struct node *head = 0;
 
     for(int i = 1; i <= 8; ++i) {
-      head = push(head, i);
+      struct node *new_head = push(head, i);
+      if (new_head == 0) {
+          free_list(head);
+          return 1;
+      }
+      head = new_head;
     }
     printf("initial list:\n");
     print_list(head);
@@ -73,10 +78,18 @@ int main(void)
     printf("list with removed value:\n");
     print_list(head);
 
-    head = push(head, 7331);
+    struct node *new_head = push(head, 7331);
+    if (new_head == 0) {
+        free_list(head);
+        return 1;
+    }
+    head = new_head;
+
     printf("list with new value:\n");
     print_list(head);
 
     free_list(head);
     printf("memory is freed\n");
+
+    return 0;
 }
