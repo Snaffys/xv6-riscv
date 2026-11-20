@@ -122,8 +122,8 @@ int used(block *block) {
   return block->size & USED;
 }
 
-block *next_block(block *block) {
-  char *next_block_ptr = (char *)block + block_size(block);
+block *next_block(block *b) {
+  char *next_block_ptr = (char *)b + block_size(b);
     
   if (next_block_ptr < heap_end) {
     return (struct block *)next_block_ptr;
@@ -140,22 +140,22 @@ block *prev_block(block *b) {
   }
 }
 
-static int list_for_block(uint block_size) {
-  int list = 0;
+static int list_idx_for_block(uint block_size) {
+  int list_idx = 0;
 
   while (block_size >>= 1) {
-    ++list;
+    ++list_idx;
   }
 
-  if (list >= NLISTS) {
-    list = NLISTS - 1;
+  if (list_idx >= NLISTS) {
+    list_idx = NLISTS - 1;
   }
-  return list;
+  return list_idx;
 }
 
 static void add_block_to_free_lists(block *b) {
   free_block *fb = (free_block *)b;
-  int list_idx = list_for_block(block_size(b));
+  int list_idx = list_idx_for_block(block_size(b));
   fb->prev = 0;
   fb->next = free_block_lists[list_idx];
   if (fb->next) { 
@@ -164,13 +164,13 @@ static void add_block_to_free_lists(block *b) {
   free_block_lists[list_idx] = fb;
 }
 
-static void remove_block_from_free_lists(block *block) {
-  free_block *fb = (free_block *)block;
+static void remove_block_from_free_lists(block *b) {
+  free_block *fb = (free_block *)b;
   
   if (fb->prev) {
     fb->prev->next = fb->next; 
   } else {
-    int list_idx = list_for_block(block_size(block));
+    int list_idx = list_idx_for_block(block_size(b));
     free_block_lists[list_idx] = fb->next;
   }
 
@@ -180,7 +180,7 @@ static void remove_block_from_free_lists(block *block) {
 }
 
 static block *find_block(uint needed_size) {
-  for (int list_idx = list_for_block(needed_size); list_idx < NLISTS; ++list_idx) {
+  for (int list_idx = list_idx_for_block(needed_size); list_idx < NLISTS; ++list_idx) {
     for (free_block *fb = free_block_lists[list_idx]; fb; fb = fb->next) {
       if (block_size(&fb->block) >= needed_size) {
         return &fb->block;
@@ -205,10 +205,6 @@ static int more_heap(uint needed_size) {
   if (allocated_ptr == SBRK_ERROR) {
     return -1;
   }
-  if (allocated_ptr != heap_end) {           
-    sbrk(-(int)allocated_bytes);
-    return -1;
-  }
   heap_end += allocated_bytes;
 
   if (last_block && !used(last_block)) {
@@ -226,16 +222,46 @@ static int more_heap(uint needed_size) {
     last_block = b;
     add_block_to_free_lists(b);
   }
-  printf("allocated bytes: %d heap_end%p\n", allocated_bytes, heap_end);
   return 0;
+}
+
+static void dump(const char *op) {
+  if (!sfl_debug) {
+    return;
+  }
+
+  uint heap_size = heap_end - heap_start;
+  uint used_bytes = 0;
+
+  printf("%s: heap_start: %p; heap_end: %p; heap_size: %d\n", op, heap_start, heap_end, heap_size);
+
+  for (char *p = heap_start; p < heap_end; p += block_size((block *)p)) {
+    block *b = (block *)p;
+    printf("block_ptr: %p; block_usage: %s; block_size: %d\n", b, used(b) ? "USED" : "FREE", block_size(b));
+    if (used(b)) {
+      used_bytes += block_size(b);
+    }
+  }
+
+  for (int i = 0; i < NLISTS; ++i) {
+    if (!free_block_lists[i]) {
+      continue;
+    }
+    printf("list[%d]: ", i);
+    for (free_block *fb = free_block_lists[i]; fb; fb = fb->next) {
+      printf("free_block_ptr: %p; free_block_size: %d;\t", fb, block_size(&fb->block));
+    }
+    printf("\n");
+  }
+
+  printf("usage_ratio: %d/%d\n", used_bytes, heap_size);
 }
 
 void *malloc(uint size) {
   if (size == 0) { 
     return 0;
   }
-  uint needed_block_size = (size + sizeof(block) + 7) & ~7;
-  
+  uint needed_block_size = (size + sizeof(block) + 7) & ~7; 
   
   if (needed_block_size < MINBLOCKSIZE) {
     needed_block_size = MINBLOCKSIZE;
@@ -271,17 +297,17 @@ void *malloc(uint size) {
     b->size |= USED;
   }
 
-  // info
+  dump("malloc");
   return (char *)b + sizeof(block);
 }
 
-void free(void *ap) {
-  if (!ap) {
+void free(void *addr_ptr) {
+  if (!addr_ptr) {
     return;
   }
-  block *b = (block *)((char *)ap - sizeof(block));
-  if ((char *)b < heap_start || (char *)ap >= heap_end || !used(b)) {
-    printf("wrong pointer: %p\n", ap);
+  block *b = (block *)((char *)addr_ptr - sizeof(block));
+  if ((char *)b < heap_start || (char *)addr_ptr >= heap_end || !used(b)) {
+    printf("wrong pointer: %p\n", addr_ptr);
     return;
   }
   b->size &= ~USED;
@@ -317,12 +343,12 @@ void free(void *ap) {
     }
     if (keep < heap_end) {
       uint rest_mem = heap_end - keep;
+      block *before_b = prev_block(b);
       if (sbrk(-(int)rest_mem) != SBRK_ERROR) {
         heap_end = keep;
-        printf("freed memory: %d  heap end: %p\n", rest_mem, heap_end);
         if (keep == (char *)b) {
-          last_block = prev_block(b);
-          // info
+          last_block = before_b;
+          dump("free");
           return;
         }
         
@@ -331,5 +357,5 @@ void free(void *ap) {
     }
   }
   add_block_to_free_lists(b);
-  //info
+  dump("free");
 }
