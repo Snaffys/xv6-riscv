@@ -79,5 +79,4 @@ int main(void)
 
     free_list(head);
     printf("memory is freed\n");
-    exit(0);
 }
