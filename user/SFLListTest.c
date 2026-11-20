@@ -44,7 +44,7 @@ void print_list(struct node *head)
 {
     while(head) {
         printf(" %d", head->value);
-  head = head->next;
+        head = head->next;
     }    
     printf("\n");
 }
